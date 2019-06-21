@@ -38,6 +38,14 @@ processor := bulky.NewBulkDataProcessor(new(event), bulky.Option{
 })
 ```
 
+Options:
+
+1. `MaxInFlight`: Number of concurrent process at once taken from scheduler channel (worker)
+
+2. `MaxScheduledProcess`: Maximum capacity of scheduled process (pending process)
+
+3. `NumberOrDataAtOnce`: Number of bulk data to be processed. The data will be process after `n` data is collected
+
 For example, we can create a simple scheduler to schedule a stream of data:
 
 ```go
