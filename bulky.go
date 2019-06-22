@@ -95,7 +95,7 @@ func (b *BulkDataProcessor) cleanup() {
 }
 
 //Schedule schedules the data
-func (b *BulkDataProcessor) Schedule(data Data) error {
+func (b *BulkDataProcessor) Schedule(data Data) {
 	if b.buff == nil {
 		b.buff = make([]Data, 0)
 	}
@@ -108,7 +108,6 @@ func (b *BulkDataProcessor) Schedule(data Data) error {
 		}
 		b.buff = nil
 	}
-	return nil
 }
 
 //Stop set runnier to false
