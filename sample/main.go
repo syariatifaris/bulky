@@ -21,8 +21,8 @@ func main() {
 	seeds := makeRange(0, 90)
 	processor := bulky.NewBulkDataProcessor(new(event), bulky.Option{
 		MaxInFlight:         10,
-		MaxScheduledProcess: 10,
-		NumberOfDataAtOnce:  20,
+		MaxScheduledProcess: 1,
+		NumberOfDataAtOnce:  10,
 	})
 
 	start := time.Now()

@@ -1,5 +1,9 @@
 package bulky
 
+import (
+	"sync"
+)
+
 //ProcessEvent contract
 type ProcessEvent interface {
 	OnProcess([]Data)
@@ -23,11 +27,16 @@ type BulkDataProcessor struct {
 	nbulk   int
 	nchan   int
 	nflight int
-	nproc   int
+	nproc   *nproc
 	run     bool
 	buff    []Data
 	dschan  chan []Data
 	event   ProcessEvent
+}
+
+type nproc struct {
+	count int
+	sync.RWMutex
 }
 
 //NewBulkDataProcessor creates new bulk data processor
@@ -39,6 +48,7 @@ func NewBulkDataProcessor(event ProcessEvent, option Option) *BulkDataProcessor 
 		run:     true,
 		event:   event,
 		dschan:  make(chan []Data, 1),
+		nproc:   new(nproc),
 	}
 	if proc.nchan > 0 {
 		proc.dschan = make(chan []Data, proc.nchan)
@@ -49,13 +59,13 @@ func NewBulkDataProcessor(event ProcessEvent, option Option) *BulkDataProcessor 
 //Process processes the scheduled data
 func (b *BulkDataProcessor) Process(stop chan<- bool) {
 	for {
-		if b.nproc >= b.nflight {
+		if b.nproc.count >= b.nflight {
 			continue
 		}
 		select {
 		case dds := <-b.dschan:
-			b.nproc++
-			go b.do(&b.nproc, dds)
+			b.nproc.count++
+			go b.do(dds)
 		default: // no schedule
 		}
 		//clear remain data
@@ -65,7 +75,7 @@ func (b *BulkDataProcessor) Process(stop chan<- bool) {
 		}
 	}
 	//wait all done
-	for b.nproc != 0 {
+	for b.nproc.count != 0 {
 	}
 	stop <- true
 	close(stop)
@@ -73,8 +83,8 @@ func (b *BulkDataProcessor) Process(stop chan<- bool) {
 
 func (b *BulkDataProcessor) cleanup() {
 	if b.buff != nil {
-		b.nproc++
-		go b.do(&b.nproc, b.buff)
+		b.nproc.count++
+		go b.do(b.buff)
 	}
 	var rproc int
 	rem := len(b.dschan)
@@ -84,9 +94,9 @@ func (b *BulkDataProcessor) cleanup() {
 		}
 		select {
 		case dds := <-b.dschan:
-			b.nproc++
+			b.nproc.count++
 			rproc++
-			go b.do(&b.nproc, dds)
+			go b.do(dds)
 		default:
 			break
 		}
@@ -116,9 +126,11 @@ func (b *BulkDataProcessor) Stop() {
 }
 
 //do runs the process
-func (b *BulkDataProcessor) do(nproc *int, ss []Data) {
+func (b *BulkDataProcessor) do(ss []Data) {
 	defer func() {
-		*nproc = *nproc - 1
+		b.nproc.Lock()
+		defer b.nproc.Unlock()
+		b.nproc.count--
 	}()
 	b.event.OnProcess(ss)
 }
