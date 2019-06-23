@@ -1,20 +1,25 @@
 package bulky
 
 import (
+	"context"
 	"sync"
+	"time"
 )
 
 //ProcessEvent contract
 type ProcessEvent interface {
-	OnProcess([]Data)
+	OnProcess([]Data) error
+	OnProcessError(string, []Data)
+	OnProcessTimeout([]Data)
 	OnScheduleFailed([]Data)
 }
 
 //Option as configuration
 type Option struct {
-	MaxInFlight         int
-	MaxScheduledProcess int
-	NumberOfDataAtOnce  int
+	MaxInFlight          int
+	MaxScheduledProcess  int
+	NumberOfDataAtOnce   int
+	ProcessTimeoutSecond int
 }
 
 //Data holds passed data
@@ -22,16 +27,23 @@ type Data struct {
 	Body interface{}
 }
 
+//ErrEvent error event
+type ErrEvent struct {
+	Err  error
+	Args []interface{}
+}
+
 //BulkDataProcessor structure
 type BulkDataProcessor struct {
-	nbulk   int
-	nchan   int
-	nflight int
-	nproc   *nproc
-	run     bool
-	buff    []Data
-	dschan  chan []Data
-	event   ProcessEvent
+	nbulk    int
+	nchan    int
+	nflight  int
+	nproc    *nproc
+	run      bool
+	buff     *buff
+	dschan   chan []Data
+	event    ProcessEvent
+	ptimeout int
 }
 
 type nproc struct {
@@ -39,16 +51,22 @@ type nproc struct {
 	sync.RWMutex
 }
 
+type buff struct {
+	data []Data
+	sync.RWMutex
+}
+
 //NewBulkDataProcessor creates new bulk data processor
 func NewBulkDataProcessor(event ProcessEvent, option Option) *BulkDataProcessor {
 	proc := &BulkDataProcessor{
-		nbulk:   option.NumberOfDataAtOnce,
-		nchan:   option.MaxScheduledProcess,
-		nflight: option.MaxInFlight,
-		run:     true,
-		event:   event,
-		dschan:  make(chan []Data, 1),
-		nproc:   new(nproc),
+		nbulk:    option.NumberOfDataAtOnce,
+		nchan:    option.MaxScheduledProcess,
+		nflight:  option.MaxInFlight,
+		run:      true,
+		event:    event,
+		dschan:   make(chan []Data, 1),
+		nproc:    new(nproc),
+		ptimeout: option.ProcessTimeoutSecond,
 	}
 	if proc.nchan > 0 {
 		proc.dschan = make(chan []Data, proc.nchan)
@@ -82,9 +100,9 @@ func (b *BulkDataProcessor) Process(stop chan<- bool) {
 }
 
 func (b *BulkDataProcessor) cleanup() {
-	if b.buff != nil {
+	if b.buff != nil && b.buff.data != nil {
 		b.nproc.count++
-		go b.do(b.buff)
+		go b.do(b.buff.data)
 	}
 	var rproc int
 	rem := len(b.dschan)
@@ -107,22 +125,34 @@ func (b *BulkDataProcessor) cleanup() {
 //Schedule schedules the data
 func (b *BulkDataProcessor) Schedule(data Data) {
 	if b.buff == nil {
-		b.buff = make([]Data, 0)
-	}
-	b.buff = append(b.buff, data)
-	if len(b.buff) == b.nbulk {
-		select {
-		case b.dschan <- b.buff:
-		default:
-			b.event.OnScheduleFailed(b.buff)
+		b.buff = &buff{
+			data: make([]Data, 0),
 		}
-		b.buff = nil
+	}
+	b.buff.Lock()
+	defer b.buff.Unlock()
+	b.buff.data = append(b.buff.data, data)
+	if len(b.buff.data) == b.nbulk {
+		select {
+		case b.dschan <- b.buff.data:
+		default:
+			b.event.OnScheduleFailed(b.buff.data)
+		}
+		b.buff.data = nil
 	}
 }
 
 //Stop set runnier to false
 func (b *BulkDataProcessor) Stop() {
 	b.run = false
+}
+
+//ConsumeBuffer forces process on the event using existing buffer data
+func (b *BulkDataProcessor) ConsumeBuffer() {
+	b.buff.Lock()
+	defer b.buff.Unlock()
+	b.do(b.buff.data)
+	b.buff.data = nil
 }
 
 //do runs the process
@@ -132,5 +162,21 @@ func (b *BulkDataProcessor) do(ss []Data) {
 		defer b.nproc.Unlock()
 		b.nproc.count--
 	}()
-	b.event.OnProcess(ss)
+
+	tctx, cancel := context.WithTimeout(context.Background(),
+		time.Second*time.Duration(b.ptimeout))
+	defer cancel()
+
+	echan := make(chan error, 1)
+	go func(colls []Data) {
+		echan <- b.event.OnProcess(colls)
+	}(ss)
+	select {
+	case <-tctx.Done():
+		b.event.OnProcessTimeout(ss)
+	case err := <-echan:
+		if err != nil {
+			b.event.OnProcessError(err.Error(), ss)
+		}
+	}
 }

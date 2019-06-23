@@ -9,8 +9,18 @@ import (
 
 type event struct{}
 
-func (e *event) OnProcess(colls []bulky.Data) {
+func (e *event) OnProcess(colls []bulky.Data) error {
 	fmt.Println("on processing: ", colls)
+	time.Sleep(time.Second / 2)
+	return nil
+}
+
+func (e *event) OnProcessTimeout(colls []bulky.Data) {
+	fmt.Println("process timeout:", colls)
+}
+
+func (e *event) OnProcessError(cause string, colls []bulky.Data) {
+	fmt.Println("process error:", colls, "cause:", cause)
 }
 
 func (e *event) OnScheduleFailed(colls []bulky.Data) {
@@ -18,11 +28,12 @@ func (e *event) OnScheduleFailed(colls []bulky.Data) {
 }
 
 func main() {
-	seeds := makeRange(0, 90)
+	seeds := makeRange(0, 99)
 	processor := bulky.NewBulkDataProcessor(new(event), bulky.Option{
-		MaxInFlight:         10,
-		MaxScheduledProcess: 1,
-		NumberOfDataAtOnce:  10,
+		MaxInFlight:          10,
+		MaxScheduledProcess:  10,
+		NumberOfDataAtOnce:   10,
+		ProcessTimeoutSecond: 1,
 	})
 
 	start := time.Now()

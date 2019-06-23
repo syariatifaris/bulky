@@ -11,8 +11,17 @@ To use this library, we need to create an `Event` and `Processor` object.
 ```go
 type event struct{}
 
-func (e *event) OnProcess(colls []bulky.Data) {
+func (e *event) OnProcess(colls []bulky.Data) error {
     fmt.Println("on processing: ", colls)
+    return nil
+}
+
+func (e *event) OnProcessTimeout(colls []bulky.Data) {
+    fmt.Println("process timeout:", colls)
+}
+
+func (e *event) OnProcessError(cause string, colls []bulky.Data) {
+    fmt.Println("process error:", colls, "cause:", cause)
 }
 
 func (e *event) OnScheduleFailed(colls []bulky.Data) {
@@ -24,7 +33,11 @@ There are two event type:
 
 1. **OnProcess**: is a callback when the bulk data is collected
 
-2. **OnScheduleFailed**: in case of the buffer of process is full, the library will returns the last n bulk data to be handled (i.e: re-published or re-queue)
+2. **OnProcessFailed**: will be called when the process above return error
+
+3. **OnProcessTimeout**: when the process exceed the deadline, this callback will be called
+
+4. **OnScheduleFailed**: in case of the buffer of process is full, the library will returns the last n bulk data to be handled (i.e: re-published or re-queue)
 
 ### Processor
 
@@ -35,6 +48,7 @@ processor := bulky.NewBulkDataProcessor(new(event), bulky.Option{
     MaxInFlight:         10,
     MaxScheduledProcess: 10,
     NumberOfDataAtOnce:  20,
+    ProcessTimeoutSecond: 1,
 })
 ```
 
