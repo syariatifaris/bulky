@@ -120,7 +120,7 @@ func (b *BulkDataProcessor) cleanup() {
 			break
 		}
 	}
-	b.buff = nil
+	b.buff.data = nil
 }
 
 //Schedule schedules the data
@@ -146,15 +146,9 @@ func (b *BulkDataProcessor) Stop() {
 	b.run = false
 }
 
-//ConsumeBuffer forces process on the event using existing buffer data
-func (b *BulkDataProcessor) ConsumeBuffer() {
-	b.buff.Lock()
-	defer b.buff.Unlock()
-	if len(b.buff.data) == 0 {
-		return
-	}
-	b.do(b.buff.data)
-	b.buff.data = nil
+//CleanUp forces process on the event using existing buffer data
+func (b *BulkDataProcessor) CleanUp() {
+	b.cleanup()
 }
 
 //do runs the process
