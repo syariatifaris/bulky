@@ -65,6 +65,7 @@ func NewBulkDataProcessor(event ProcessEvent, option Option) *BulkDataProcessor 
 		run:      true,
 		event:    event,
 		dschan:   make(chan []Data, 1),
+		buff:     new(buff),
 		nproc:    new(nproc),
 		ptimeout: option.ProcessTimeoutSecond,
 	}
@@ -124,10 +125,8 @@ func (b *BulkDataProcessor) cleanup() {
 
 //Schedule schedules the data
 func (b *BulkDataProcessor) Schedule(data Data) {
-	if b.buff == nil {
-		b.buff = &buff{
-			data: make([]Data, 0),
-		}
+	if b.buff.data == nil {
+		b.buff.data = make([]Data, 0)
 	}
 	b.buff.Lock()
 	defer b.buff.Unlock()
