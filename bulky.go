@@ -150,6 +150,9 @@ func (b *BulkDataProcessor) Stop() {
 func (b *BulkDataProcessor) ConsumeBuffer() {
 	b.buff.Lock()
 	defer b.buff.Unlock()
+	if len(b.buff.data) == 0 {
+		return
+	}
 	b.do(b.buff.data)
 	b.buff.data = nil
 }
